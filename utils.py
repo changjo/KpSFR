@@ -16,11 +16,11 @@ def get_mean_std(loader):
 
     for data, _ in loader:
         channels_sum += torch.mean(data, dim=[0, 2, 3])
-        channels_squared_sum += torch.mean(data ** 2, dim=[0, 2, 3])
+        channels_squared_sum += torch.mean(data**2, dim=[0, 2, 3])
         num_batches += 1
 
     mean = channels_sum / num_batches
-    std = (channels_squared_sum / num_batches - mean ** 2) ** 0.5
+    std = (channels_squared_sum / num_batches - mean**2) ** 0.5
 
     return mean, std
 
@@ -54,18 +54,16 @@ def hasnan(x):
 def to_numpy(tensor):
     if torch.is_tensor(tensor):
         return tensor.detach().cpu().numpy()
-    elif type(tensor).__module__ != 'numpy':
-        raise ValueError("Cannot convert {} to numpy array"
-                         .format(type(tensor)))
+    elif type(tensor).__module__ != "numpy":
+        raise ValueError("Cannot convert {} to numpy array".format(type(tensor)))
     return tensor
 
 
 def to_torch(ndarray):
-    if type(ndarray).__module__ == 'numpy':
+    if type(ndarray).__module__ == "numpy":
         return torch.from_numpy(ndarray.copy())
     elif not torch.is_tensor(ndarray):
-        raise ValueError("Cannot convert {} to torch tensor"
-                         .format(type(ndarray)))
+        raise ValueError("Cannot convert {} to torch tensor".format(type(ndarray)))
     return ndarray
 
 
@@ -105,17 +103,20 @@ def gen_template_grid():
     nx, ny = (13, 7)
     x = np.linspace(0, field_dim_x, nx)
     y = np.linspace(0, field_dim_y, ny)
-    xv, yv = np.meshgrid(x, y, indexing='ij')
+    xv, yv = np.meshgrid(x, y, indexing="ij")
     uniform_grid = np.stack((xv, yv), axis=2).reshape(-1, 2)
-    uniform_grid = np.concatenate((uniform_grid, np.ones(
-        (uniform_grid.shape[0], 1))), axis=1)  # top2bottom, left2right
+    uniform_grid = np.concatenate(
+        (uniform_grid, np.ones((uniform_grid.shape[0], 1))), axis=1
+    )  # top2bottom, left2right
     # TODO: class label in template, each keypoints is (x, y, c), c is label that starts from 1
     for idx, pts in enumerate(uniform_grid):
         pts[2] = idx + 1  # keypoints label
     return uniform_grid
 
 
-def gen_im_partial_grid(mode, frame, gt_homo, template, noise_trans, noise_rotate, index):
+def gen_im_partial_grid(
+    mode, frame, gt_homo, template, noise_trans, noise_rotate, index
+):
     # === Warping image and grid for single-frame method ===
     frame_w, frame_h = frame.shape[1], frame.shape[0]
 
@@ -130,7 +131,7 @@ def gen_im_partial_grid(mode, frame, gt_homo, template, noise_trans, noise_rotat
         pts[2] = idx + 1  # keypoints label
 
     # TODO: apply random small noise to the gt homography and the image is warp accordingly
-    if mode == 'train' and random.random() < 0.5:
+    if mode == "train" and random.random() < 0.5:
         # if False:
         # if True:
         # only store those points in image view
@@ -159,17 +160,13 @@ def gen_im_partial_grid(mode, frame, gt_homo, template, noise_trans, noise_rotat
                 scaling_mat[1, 2] = frame_h // 6
         tx = random.uniform(-noise_trans, noise_trans)
         ty = random.uniform(-noise_trans, noise_trans)
-        translate_mat = np.array([[1, 0, tx],
-                                  [0, 1, ty],
-                                  [0, 0, 1]], dtype=np.float32)
+        translate_mat = np.array([[1, 0, tx], [0, 1, ty], [0, 0, 1]], dtype=np.float32)
 
         theta = random.uniform(-noise_rotate, noise_rotate)
         deflection = 1.0
         theta = theta * 2.0 * deflection * np.pi  # in radians
         c, s = np.cos(theta), np.sin(theta)
-        rotate_mat = np.array([[c, -s, 0],
-                               [s, c, 0],
-                               [0, 0, 1]], dtype=np.float32)
+        rotate_mat = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]], dtype=np.float32)
 
         pert_homo = rotate_mat @ gt_homo @ scaling_mat @ translate_mat @ rotate_mat.T
         pert_homo /= pert_homo[2, 2]
@@ -191,10 +188,20 @@ def gen_im_partial_grid(mode, frame, gt_homo, template, noise_trans, noise_rotat
         dst_pts = np.array(dst_list)
         if src_pts.shape[0] >= 4 and dst_pts.shape[0] >= 4:
             new_homo_mat, mask = cv2.findHomography(
-                src_pts[:, :2].reshape(-1, 1, 2), dst_pts[:, :2].reshape(-1, 1, 2), cv2.RANSAC, 5)
+                src_pts[:, :2].reshape(-1, 1, 2),
+                dst_pts[:, :2].reshape(-1, 1, 2),
+                cv2.RANSAC,
+                5,
+            )
             if new_homo_mat is not None:
                 warp_image = cv2.warpPerspective(
-                    frame, new_homo_mat, (frame_w, frame_h), cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT, borderValue=(0))
+                    frame,
+                    new_homo_mat,
+                    (frame_w, frame_h),
+                    cv2.INTER_CUBIC,
+                    borderMode=cv2.BORDER_CONSTANT,
+                    borderValue=(0),
+                )
                 warp_grid = dst_pts.copy()
                 homo_mat = pert_homo
             else:
@@ -224,7 +231,26 @@ def gen_im_partial_grid(mode, frame, gt_homo, template, noise_trans, noise_rotat
     return warp_image, warp_grid, homo_mat
 
 
-def gen_im_whole_grid(mode, frame, f_idx, gt_homo, template, noise_trans, noise_rotate, index, vid_name=None):
+def infer_gen_im_partial_grid(frame, template):
+    unigrid_copy = template.copy()  # (91, 3)
+    unigrid_copy[:, 2] = 1
+
+    warp_image = frame.copy()
+
+    return warp_image
+
+
+def gen_im_whole_grid(
+    mode,
+    frame,
+    f_idx,
+    gt_homo,
+    template,
+    noise_trans,
+    noise_rotate,
+    index,
+    vid_name=None,
+):
     # === Warping image and grid for multi-frame method or cooredinate regression ===
     frame_w, frame_h = frame.shape[1], frame.shape[0]
 
@@ -239,7 +265,7 @@ def gen_im_whole_grid(mode, frame, f_idx, gt_homo, template, noise_trans, noise_
         pts[2] = idx + 1  # keypoints label
 
     # TODO: apply random small noise to the gt homography and the image is warp accordingly
-    if mode == 'train' and (f_idx == 1 or f_idx == 2):  # hard level
+    if mode == "train" and (f_idx == 1 or f_idx == 2):  # hard level
         # only store those points in image view
         l1, l2, label = [], [], []
         for pts, t_pts, sub_pts in zip(gt_warp_grid, unigrid_copy, template):
@@ -248,9 +274,9 @@ def gen_im_whole_grid(mode, frame, f_idx, gt_homo, template, noise_trans, noise_
                 l2.append(t_pts)
                 label.append(sub_pts[2])  # has labels
             else:
-                l1.append([float('nan'), float('nan'), -1.])
-                l2.append([float('nan'), float('nan'), 1.])
-                label.append(-1.)
+                l1.append([float("nan"), float("nan"), -1.0])
+                l2.append([float("nan"), float("nan"), 1.0])
+                label.append(-1.0)
 
         src_grid = np.array(l1)
         tmp_grid = np.array(l2)
@@ -271,17 +297,13 @@ def gen_im_whole_grid(mode, frame, f_idx, gt_homo, template, noise_trans, noise_
                 scaling_mat[1, 2] = frame_h // 6
         tx = random.uniform(-noise_trans, noise_trans)
         ty = random.uniform(-noise_trans, noise_trans)
-        translate_mat = np.array([[1, 0, tx],
-                                  [0, 1, ty],
-                                  [0, 0, 1]], dtype=np.float32)
+        translate_mat = np.array([[1, 0, tx], [0, 1, ty], [0, 0, 1]], dtype=np.float32)
 
         theta = random.uniform(-noise_rotate, noise_rotate)
         deflection = 1.0
         theta = theta * 2.0 * deflection * np.pi  # in radians
         c, s = np.cos(theta), np.sin(theta)
-        rotate_mat = np.array([[c, -s, 0],
-                               [s, c, 0],
-                               [0, 0, 1]], dtype=np.float32)
+        rotate_mat = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]], dtype=np.float32)
 
         pert_homo = rotate_mat @ gt_homo @ scaling_mat @ translate_mat @ rotate_mat.T
         pert_homo /= pert_homo[2, 2]
@@ -302,17 +324,27 @@ def gen_im_whole_grid(mode, frame, f_idx, gt_homo, template, noise_trans, noise_
                 src_list.append(_src)
                 dst_list.append(_dst)
             else:
-                _dst[0] = float('nan')
-                _dst[1] = float('nan')
-                _dst[2] = -1.
+                _dst[0] = float("nan")
+                _dst[1] = float("nan")
+                _dst[2] = -1.0
         src_pts = np.array(src_list)
         dst_pts = np.array(dst_list)
         if src_pts.shape[0] >= 4 and dst_pts.shape[0] >= 4:
             new_homo_mat, mask = cv2.findHomography(
-                src_pts[:, :2].reshape(-1, 1, 2), dst_pts[:, :2].reshape(-1, 1, 2), cv2.RANSAC, 5)
+                src_pts[:, :2].reshape(-1, 1, 2),
+                dst_pts[:, :2].reshape(-1, 1, 2),
+                cv2.RANSAC,
+                5,
+            )
             if new_homo_mat is not None:
                 warp_image = cv2.warpPerspective(
-                    frame, new_homo_mat, (frame_w, frame_h), cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT, borderValue=(0))
+                    frame,
+                    new_homo_mat,
+                    (frame_w, frame_h),
+                    cv2.INTER_CUBIC,
+                    borderMode=cv2.BORDER_CONSTANT,
+                    borderValue=(0),
+                )
                 warp_grid = pert_src_grid.copy()
                 homo_mat = pert_homo
             else:
@@ -328,7 +360,7 @@ def gen_im_whole_grid(mode, frame, f_idx, gt_homo, template, noise_trans, noise_
             if 0 <= pts[0] < frame_w and 0 <= pts[1] < frame_h:
                 grid_list.append(pts)
             else:
-                grid_list.append([float('nan'), float('nan'), -1.])
+                grid_list.append([float("nan"), float("nan"), -1.0])
         warp_grid = np.array(grid_list)
         homo_mat = gt_homo
 
@@ -339,11 +371,20 @@ def gen_im_whole_grid(mode, frame, f_idx, gt_homo, template, noise_trans, noise_
             if 0 <= pts[0] < frame_w and 0 <= pts[1] < frame_h:
                 grid_list.append(pts)
             else:
-                grid_list.append([float('nan'), float('nan'), -1.])
+                grid_list.append([float("nan"), float("nan"), -1.0])
         warp_grid = np.array(grid_list)
         homo_mat = gt_homo
 
     return warp_image, warp_grid, homo_mat
+
+
+def infer_gen_im_whole_grid(frame, template):
+    unigrid_copy = template.copy()  # (91, 3)
+    unigrid_copy[:, 2] = 1
+
+    warp_image = frame.copy()
+
+    return unigrid_copy, warp_image
 
 
 def put_lrflip_augmentation(frame, unigrid):
